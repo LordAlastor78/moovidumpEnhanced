@@ -1,0 +1,6 @@
+{
+  "typeCheckingMode": "basic",
+  "reportMissingParameterType": false,
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false
+}
