@@ -2,6 +2,8 @@
 
 Descargador inteligente de contenidos de plataformas Moodle con interfaz amigable y avisos detallados de progreso.
 
+MooviDum es su programa de confianza para obtener archivos y documentos sin ni siquiera entrar al navegador. Trato de actualizar regularmente este proyecto. Muchas gracias !
+
 ## 🎯 Características
 
 - ✅ **Descarga automática** de cursos completos desde Moodle
