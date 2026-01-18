@@ -63,21 +63,48 @@ def pluginfile_to_token_url(file_url, private_access_key):
 def login(username, password):
     global token, private_token
 
-    print("🔐 Iniciando sesión...")
-    response = requests.post(
-        f"{SITE}/login/token.php?lang=en",
-        headers=HEADERS,
-        data={"username": username, "password": password, "service": "moodle_mobile_app"},
-    )
+    print(f"Attempting login to {SITE}...")
+    try:
+        response = requests.post(
+            f"{SITE}/login/token.php?lang=en",
+            headers=HEADERS,
+            data={"username": username, "password": password, "service": "moodle_mobile_app"},
+            timeout=30,
+        )
 
-    if response.status_code == 200:
-        data = response.json()
-        token = data.get("token")
-        private_token = data.get("privatetoken")
-        print("✅ Sesión iniciada correctamente")
-        return token is not None
-    else:
-        print("❌ Error al iniciar sesión:", response.text)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check for Moodle error responses
+            if "error" in data:
+                print(f"Login error: {data.get('error', 'Unknown error')}")
+                if "errorcode" in data:
+                    print(f"Error code: {data['errorcode']}")
+                if "stacktrace" in data:
+                    print(f"Details: {data.get('message', '')}")
+                return False
+            
+            token = data.get("token")
+            private_token = data.get("privatetoken")
+            
+            if not token:
+                print("Error: No token received from server")
+                print(f"Response data: {json.dumps(data, indent=2)}")
+                return False
+            
+            print(f"✓ Token received: {token[:20]}...")
+            return True
+        else:
+            print(f"HTTP error {response.status_code}: {response.text}")
+            return False
+    except requests.exceptions.Timeout:
+        print("Error: Connection timeout. Check your internet connection and MOODLE_SITE URL.")
+        return False
+    except requests.exceptions.ConnectionError:
+        print(f"Error: Cannot connect to {SITE}. Check the URL in your .env file.")
+        return False
+    except Exception as e:
+        print(f"Unexpected error during login: {e}")
         return False
 
 
@@ -89,16 +116,36 @@ def post_webservice(function, arguments=None):
     if arguments:
         params.update(arguments)
 
-    response = requests.post(
-        WEBSERVICE_URL,
-        params=params,
-        headers=HEADERS,
-        data={"moodlewssettingfilter": "true", "moodlewssettingfileurl": "true", "moodlewssettinglang": "en"},
-    )
+    try:
+        response = requests.post(
+            WEBSERVICE_URL,
+            params=params,
+            headers=HEADERS,
+            data={"moodlewssettingfilter": "true", "moodlewssettingfileurl": "true", "moodlewssettinglang": "en"},
+            timeout=30,
+        )
 
-    if response.status_code == 200:
-        return response.json()
-    else:
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check for Moodle error in response
+            if isinstance(data, dict) and "exception" in data:
+                print(f"\nAPI Error calling {function}:")
+                print(f"  Exception: {data.get('exception', 'Unknown')}")
+                print(f"  Message: {data.get('message', 'No message')}")
+                if "errorcode" in data:
+                    print(f"  Error code: {data['errorcode']}")
+                return None
+            
+            return data
+        else:
+            print(f"HTTP {response.status_code} calling {function}: {response.text[:200]}")
+            return None
+    except requests.exceptions.Timeout:
+        print(f"Timeout calling {function}")
+        return None
+    except Exception as e:
+        print(f"Error calling {function}: {e}")
         return None
 
 
@@ -127,49 +174,55 @@ def call_moodle_mobile_functions(requests_list):
 
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("📚 MooviDump Enhanced - Iniciando descarga...")
-    print("="*60 + "\n")
-    
     if token is None:
         if USERNAME and PASSWORD:
-            if not login(USERNAME, PASSWORD):
-                print("❌ Error: falló la autenticación")
+            if login(USERNAME, PASSWORD):
+                print("login successful!")
+            else:
+                print("login failed!")
                 sys.exit(1)
         else:
-            print("❌ Error: Faltan MOODLE_USERNAME o MOODLE_PASSWORD en .env")
+            print("Missing MOODLE_USERNAME or MOODLE_PASSWORD. Set them in .env.")
             sys.exit(1)
     else:
-        print("✅ Usando token existente")
+        print("using token:", token)
 
-    print("📡 Obteniendo información del sitio...")
+    print("\nFetching site info...")
     site_info = get_site_info()
 
-    if site_info is not None:
-        user_id = site_info.get("userid")
-        private_access_key = site_info.get("userprivateaccesskey")
-        print(f"✅ Usuario ID: {user_id}")
+    if site_info is None:
+        print("Failed to fetch site info. Check your credentials and permissions.")
+        sys.exit(1)
+    
+    user_id = site_info.get("userid")
+    private_access_key = site_info.get("userprivateaccesskey")
+    
+    if not user_id:
+        print("Error: No user ID in site info")
+        print(f"Site info: {json.dumps(site_info, indent=2)}")
+        sys.exit(1)
+    
+    print(f"✓ User ID: {user_id}")
+    if private_access_key:
+        print(f"✓ Private access key: {private_access_key[:20]}...")
     else:
-        print("❌ Error: No se pudo obtener la información del sitio")
-        sys.exit(1)
+        print("⚠ Warning: No private access key (file downloads may fail)")
 
-    print("📥 Obteniendo lista de cursos...")
+    print(f"\nFetching courses for user {user_id}...")
     courses = post_webservice("core_enrol_get_users_courses", {"userid": user_id, "returnusercount": "0"})
-    
+
     if not courses:
-        print("⚠️  No se encontraron cursos")
+        print("No courses found or error fetching courses.")
         sys.exit(1)
     
-    print(f"✅ Se encontraron {len(courses)} curso(s)")
+    print(f"✓ Found {len(courses)} course(s)\n")
 
     dumps_dir = Path("dumps")
     dumps_dir.mkdir(parents=True, exist_ok=True)
-    print(f"📁 Directorio de descarga: {dumps_dir.absolute()}\n")
 
-    for course_idx, course in enumerate(courses or [], 1):
+    for course in courses or []:
         if course.get("hidden"):
             continue
-        
         course_id = course["id"]
         alias = COURSE_ALIASES.get(course_id)
         if alias:
@@ -183,34 +236,27 @@ if __name__ == "__main__":
             folder_name = f"{course_id}_{sanitize(cleaned_name)}"
         course_dir = dumps_dir / folder_name
         course_dir.mkdir(parents=True, exist_ok=True)
-        
-        print(f"━━━ CURSO {course_idx} ━━━")
-        print(f"📂 [{cleaned_name}] ID: {course_id}")
-        print(f"   📍 Ubicación: {course_dir}")
+        print(f"\n[{course_id}] Processing: {cleaned_name}")
+        print(f"  → {course_dir}")
 
-        print(f"   ⏳ Obteniendo contenidos...")
         contents = post_webservice("core_course_get_contents", {"courseid": course_id})
-
+        
         if not contents:
-            print(f"   ⚠️  Sin contenidos")
+            print(f"  ⚠ No contents found for course {course_id}")
             continue
 
         if DUMP_ALL:
             with open(course_dir / "contents.json", "w", encoding="utf-8") as f:
                 json.dump(contents, f, indent=2, ensure_ascii=False)
-            print(f"   ✅ Guardado: contents.json")
 
         sections_root = course_dir
         if DUMP_ALL:
             sections_root = course_dir / "sections"
         sections_root.mkdir(parents=True, exist_ok=True)
 
-        total_sections = len(contents)
-        print(f"   📋 Total de secciones: {total_sections}\n")
-
-        for section_idx, section in enumerate(contents or [], 1):
+        for section in contents or []:
             section_number = section.get("section", 0)
-            section_name = section.get("name", "Sin nombre")
+            section_name = section.get("name")
 
             section_folder_name = sanitize(section_name)
             if DUMP_ALL:
@@ -218,19 +264,12 @@ if __name__ == "__main__":
             section_dir = sections_root / section_folder_name
             section_dir.mkdir(parents=True, exist_ok=True)
 
-            print(f"   📑 [{section_idx}/{total_sections}] Sección: {section_name}")
-
             if DUMP_ALL:
                 with open(section_dir / "section.json", "w", encoding="utf-8") as f:
                     json.dump(section, f, indent=2, ensure_ascii=False)
 
-            total_modules = len(section.get("modules", []))
-            if total_modules == 0:
-                print(f"       └─ ⚠️  Sin módulos")
-                continue
-
-            for module_index, module in enumerate(section.get("modules", []), 1):
-                module_name = module.get("name", "Sin nombre")
+            for module_index, module in enumerate(section.get("modules", [])):
+                module_name = module.get("name")
                 module_folder_name = sanitize(module_name)
                 if DUMP_ALL:
                     module_folder_name = f"{module_index:03d}_{sanitize(module_name)}"
@@ -241,43 +280,30 @@ if __name__ == "__main__":
                     with open(module_dir / "module.json", "w", encoding="utf-8") as f:
                         json.dump(module, f, indent=2, ensure_ascii=False)
 
-                total_files = len([c for c in module.get("contents", []) if c.get("type") == "file"])
-                
-                if total_files == 0:
-                    continue
-
-                print(f"       ├─ {module_name} ({total_files} archivo{'s' if total_files != 1 else ''})")
-
-                for file_idx, content in enumerate(module.get("contents", []), 1):
+                for content in module.get("contents", []):
                     if content.get("type") != "file":
                         continue
 
-                    file_name = content.get("filename", "desconocido")
+                    file_name = content.get("filename")
                     file_name = sanitize(file_name)
                     target_path = module_dir / file_name
 
                     file_url = content["fileurl"]
                     download_url = pluginfile_to_token_url(file_url, private_access_key)
                     if not download_url:
-                        print(f"           └─ ⚠️  {file_name} (sin acceso)")
+                        print("   skipping: missing access key or URL")
                         continue
 
+                    print(f"    ↓ {file_name}")
                     try:
-                        print(f"           └─ ⬇️  {file_name}...", end=" ", flush=True)
-                        response = requests.get(download_url, headers=HEADERS, timeout=30)
+                        response = requests.get(download_url, headers=HEADERS, timeout=60)
 
                         if response.status_code == 200:
                             with open(target_path, "wb") as f:
                                 f.write(response.content)
-                            file_size = len(response.content) / 1024  # KB
-                            print(f"✅ ({file_size:.1f} KB)")
+                            size_mb = len(response.content) / (1024 * 1024)
+                            print(f"      ✓ {size_mb:.2f} MB")
                         else:
-                            print(f"❌ Error {response.status_code}")
-                    except requests.RequestException as e:
-                        print(f"❌ Error: {str(e)[:40]}")
-            
-            print()
-
-    print("\n" + "="*60)
-    print("✅ ¡Descarga completada exitosamente!")
-    print("="*60)
+                            print(f"      ✗ HTTP {response.status_code}")
+                    except Exception as e:
+                        print(f"      ✗ Error: {e}")
