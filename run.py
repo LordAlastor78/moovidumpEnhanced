@@ -6,6 +6,42 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+import getpass
+
+def create_env_file(env_file):
+    """Create .env file interactively if it doesn't exist."""
+    print("\n❌ .env file not found!")
+    print("   Let's create it now.\n")
+    
+    # Get MOODLE_SITE
+    default_site = "https://moovi.uvigo.gal"
+    site_input = input(f"   MOODLE_SITE [{default_site}]: ").strip()
+    moodle_site = site_input if site_input else default_site
+    
+    # Get USERNAME
+    username = input("   MOODLE_USERNAME: ").strip()
+    if not username:
+        print("   ❌ Username is required!")
+        return False
+    
+    # Get PASSWORD
+    password = getpass.getpass("   MOODLE_PASSWORD: ")
+    if not password:
+        print("   ❌ Password is required!")
+        return False
+    
+    # Create .env file
+    try:
+        env_content = f"""MOODLE_SITE="{moodle_site}"
+MOODLE_USERNAME="{username}"
+MOODLE_PASSWORD="{password}"
+"""
+        env_file.write_text(env_content)
+        print(f"\n✓ .env file created successfully!")
+        return True
+    except Exception as e:
+        print(f"   ❌ Error creating .env file: {e}")
+        return False
 
 def main():
     # Get the directory of this script
@@ -20,14 +56,10 @@ def main():
     print("\n[1/3] Checking .env file...")
     env_file = script_dir / ".env"
     if not env_file.exists():
-        print("❌ .env file not found!")
-        print("   Please create a .env file with the following variables:")
-        print("   - MOODLE_SITE=https://your-moodle-site.com")
-        print("   - MOODLE_USERNAME=your_username")
-        print("   - MOODLE_PASSWORD=your_password")
-        print("\n   You can use example.env as a template.")
-        sys.exit(1)
-    print("✓ .env file found")
+        if not create_env_file(env_file):
+            sys.exit(1)
+    else:
+        print("✓ .env file found")
     
     # Step 2: Install requirements
     print("\n[2/3] Installing dependencies...")
