@@ -111,7 +111,6 @@ copy example.env .env
 # Luego edita .env con tu editor preferido
 ```
 
-Nota: `example.env` contiene placeholders. No subas nunca `.env` con credenciales reales al repositorio.
 
 ---
 
@@ -166,23 +165,6 @@ dumps/
 ```
 
 Si `DUMP_ALL = True` en `main.py`, se crean snapshots JSON adicionales por sección y módulo.
-
----
-
-## Seguridad y buenas prácticas
-
-- Nunca subas `.env` con credenciales reales a un repositorio público.
-- Añade `.env` y cualquier backup como `.env.bak` a tu `.gitignore` para evitar filtraciones.
-- El script intenta evitar imprimir tokens o contraseñas; aun así, revisa logs antes de compartirlos.
-
-Sugerencia práctica (añadir a `.gitignore`):
-
-```
-.env
-.env.bak
-dumps/
-```
-
 ---
 
 ## Personalización
@@ -205,7 +187,7 @@ Si necesitas más detalle, ejecuta con `--verbose` y comparte el log (recortando
 
 ## Agradecimientos
 
-Gracias a Tyr7z por la idea y el código base
+Gracias a Tyr7z por el código base
 
 
 ---
