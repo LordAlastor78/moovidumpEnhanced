@@ -203,10 +203,11 @@ Si necesitas más detalle, ejecuta con `--verbose` y comparte el log (recortando
 
 ---
 
-## Contribuciones
+## Agradecimientos
 
-PRs bienvenidas: arreglos de bugs, mejoras en la UI/UX, y tests. Por favor, evita añadir credenciales reales.
+Gracias a Tyr7z por la idea y el código base
+
 
 ---
 
-©️ 2026 — MooviDump Enhanced
+©️ 2026 — MooviDump Enhanced by Lord_Alastor78
