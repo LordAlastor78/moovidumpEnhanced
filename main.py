@@ -176,7 +176,9 @@ COURSE_ALIASES = {
     1701: "Centros de datos",
     1702: "Dirección e xestión de proxectos",
     1703: "Teoría de autómatas e linguaxes formais",
-    1704: "",
+    1704: "Concorrencia e distribución",
+    
+
 
 
     # TODO add all the courses you want to dump here, using their course ID as key and the desired folder name as value.
