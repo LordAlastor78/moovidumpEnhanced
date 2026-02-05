@@ -170,9 +170,14 @@ COURSE_ALIASES = {
     1695: "Bases de datos I",
     1696: "Arquitecturas paralelas",
     1697: "Lóxica para a computación",
-    1698: "",
-    1699: "",
-    1700: "",
+    1698: "Redes de computadoras II",
+    1699: "Bases de datos II",
+    1700: "Interfaces de usuario",
+    1701: "Centros de datos",
+    1702: "Dirección e xestión de proxectos",
+    1703: "Teoría de autómatas e linguaxes formais",
+    1704: "",
+
 
     # TODO add all the courses you want to dump here, using their course ID as key and the desired folder name as value.
     # If a course is not listed here, it will use its full name (sanitized) as folder name.

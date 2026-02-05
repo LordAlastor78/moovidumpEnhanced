@@ -70,125 +70,143 @@ Todos los archivos se guardan en la carpeta `dumps/`:
 ```
 dumps/
 ├── [Curso 1]/
-│   ├── [Tema 1]/
-│   │   ├── [Módulo 1]/
-│   │   │   └── archivo.pdf
-│   │   └── [Módulo 2]/
-│   │       └── recurso.zip
-│   └── [Tema 2]/
-│       └── ...
-└── [Curso 2]/
-    └── ...
+# 📚 MooviDump Enhanced
+
+> Herramienta para descargar y organizar automáticamente los recursos de tus cursos Moodle.
+
+Una utilidad simple y robusta para exportar los archivos y estructura (tema → módulo → archivo)
+de los cursos en los que estás matriculado, guardándolos en una carpeta `dumps/` local.
+
+---
+
+## ✨ Características principales
+
+- Inicio de sesión con credenciales de Moodle (entradas seguras con `getpass`).
+- Descarga de los recursos por curso/tema/módulo y organización en carpetas.
+- Evita re-descargar ficheros existentes (por nombre) a menos que uses `--force`.
+- `rich` para tablas y salida amigable en terminal.
+- Reintentos y timeouts para llamadas HTTP con `requests.Session`.
+- Modos interactivos para no guardar la contraseña (temporal) o guardarla en `.env`.
+
+---
+
+## Requisitos
+
+- Python 3.8+
+- Paquetes (instálalos con):
+
+```bash
+python -m pip install -r requirements.txt
 ```
 
-## 🔧 Personalización
+---
 
-### Aliases de Cursos
+## Instalación rápida
 
-En `main.py`, personaliza los nombres de tus cursos:
+1. Clona o descarga este repositorio.
+2. Copia el archivo de ejemplo y rellena tus credenciales (opcional):
 
-```python
-COURSE_ALIASES = {
-    1678: "FMI",
-    1679: "AM",
-    1680: "PROI",
-    1681: "SD",
-    # Añade más...
-}
+```powershell
+copy example.env .env
+# Luego edita .env con tu editor preferido
 ```
 
-Si no añades un alias, se usa el nombre del curso en Moodle.
+Nota: `example.env` contiene placeholders. No subas nunca `.env` con credenciales reales al repositorio.
 
-## ⚙️ Características
+---
 
-- ✅ Login automático con credenciales
-- ✅ Descarga de todos los cursos matriculados
-- ✅ Organización jerárquica (curso → tema → módulo → archivo)
-- ✅ Nombres sanitizados (sin caracteres especiales)
-- ✅ Manejo robusto de errores
-- ✅ Logging detallado del progreso
-- ✅ Timeouts y reintentos
+## Uso (rápido)
 
-## 🐛 Troubleshooting
+Modo interactivo y asistente: ejecuta el helper `run.py` y sigue las indicaciones:
 
-**"login failed"** → Verifica usuario/contraseña en `.env`
-
-**"Cannot connect"** → Comprueba la URL en `MOODLE_SITE`
-
-**"No courses found"** → Asegúrate de estar matriculado en al menos un curso
-
-**Archivos no se descargan** → Verifica permisos en Moodle o conectividad de red
-
-## 📝 Notas
-
-- Los archivos duplicados se sobrescriben
-- Se ignoran automáticamente los cursos ocultos
-- La información de login es local (nunca se envía a servidores externos)
-- Requiere conexión a internet estable
-
-## 🔒 Comportamiento respecto a archivos ya descargados
-
-- Ahora el script evita descargar archivos que ya existen en `dumps/` con el mismo nombre. Si un fichero con el mismo nombre está presente, se omitirá la descarga y se registrará en los logs.
-- Si quieres forzar la descarga de nuevo, elimina manualmente el archivo en `dumps/` o añade lógica de sobreescritura en `main.py`.
-
-## ⚙️ Modos de ejecución (`run.py`)
-
-- `1` Usar `.env`: usa las credenciales guardadas en `.env` (si existe). Si no existe, te preguntará si quieres crearla.
-- `2` Credenciales temporales: introduces las credenciales para esta ejecución únicamente (no se guardan en `.env`).
-- `3` Guardar credenciales: introduces las credenciales y se guardan en `.env` para usos futuros.
-
-El password no se imprime en pantalla ni se guarda por defecto a menos que elijas explícitamente la opción 3.
-
-## ✨ UI y flags
-
-- `--force`: fuerza la redescarga de archivos aunque ya existan.
-- `--verbose`: activa logging detallado (debug).
-- `rich` se usa para una salida más agradable en la terminal; está incluido en `requirements.txt`.
-
-Ejemplo de respuesta testeada:
-
-```INFO: MooviDump Enhanced - Automatic Setup & Execution
-INFO:
-[1/3] Checking .env file and credential mode...
-INFO: Elige modo de credenciales:
-INFO:   1) Usar credenciales almacenadas en .env (si existe).
-INFO:   2) Introducir credenciales para esta ejecución (no guardar).
-INFO:   3) Introducir credenciales y guardarlas en .env.
-Modo [1/2/3]: 2
-   MOODLE_SITE [https://moovi.uvigo.gal]: 
-   MOODLE_USERNAME: UR CREDENTIALS
-   MOODLE_PASSWORD: UR CREDENTIALS
-INFO: Using temporary credentials for this run (not saved).
-INFO: 
-[2/3] Installing dependencies...
-INFO: ✓ Dependencies installed successfully
-INFO: 
-[3/3] Running main.py...
-INFO: ------------------------------------------------------------
-Forzar redescarga de archivos existentes? [y/N]: n
-INFO: Launching main.py... 
-INFO: Using credentials from environment/.env.
-INFO: Attempting login to https://moovi.uvigo.gal...
-INFO: Token received: 
-INFO: login successful
-INFO: Fetching site info...
-INFO: User ID: URID
-INFO: Private access key available (truncated):
-INFO: Fetching courses for user URID...
-INFO: Found 11 course(s)
-INFO: Cursos disponibles:
-┏━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ #    ┃ Course ID  ┃ Name                                ┃
-┡━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ 1    │ 1686       │ Programación II                     │
-│ 2    │ 1685       │ Arquitectura de computadoras I      │
-│ 3    │ 1684       │ Algoritmos e estruturas de datos I  │
-│ 4    │ 1683       │ Álxebra lineal                      │
-│ 5    │ 1682       │ Técnicas de comunicación e liderado │
-└──────┴────────────┴─────────────────────────────────────┘
-
-Descargar todos los cursos? [y/N]: n
-Introduce números (1,2,3) o IDs separados por comas (vacío para cancelar): 
-Operación cancelada.
-INFO: main.py exited with code 0
+```powershell
+python run.py
 ```
+
+También puedes ejecutar directamente `main.py` si ya tienes `MOODLE_SITE`, `MOODLE_USERNAME` y `MOODLE_PASSWORD`
+definidos en tu entorno o en un fichero `.env`:
+
+```bash
+python main.py [--force] [--verbose]
+```
+
+Opciones CLI:
+- `--force` : Fuerza la re-descarga de archivos aunque ya existan.
+- `--verbose` : Activa logging en nivel `DEBUG`.
+
+---
+
+## Modos de ejecución (`run.py`)
+
+Al ejecutar `run.py` se ofrece un asistente con tres modos:
+
+1) Usar `.env` existente (si existe).
+2) Introducir credenciales temporales para esta ejecución (no se guardan).
+3) Introducir credenciales y guardarlas en `.env` para usos futuros.
+
+Por seguridad, la contraseña no se imprime en pantalla ni se guarda por defecto a menos que elijas la opción 3.
+
+---
+
+## Estructura de salida
+
+Los archivos se guardan bajo `dumps/` con una estructura anidada por curso → sección → módulo.
+
+Ejemplo:
+
+```
+dumps/
+└── FMI/
+    ├── Tema 1/
+    │   ├── Módulo A/
+    │   │   └── recurso.pdf
+    │   └── Módulo B/
+    └── Tema 2/
+        └── ...
+```
+
+Si `DUMP_ALL = True` en `main.py`, se crean snapshots JSON adicionales por sección y módulo.
+
+---
+
+## Seguridad y buenas prácticas
+
+- Nunca subas `.env` con credenciales reales a un repositorio público.
+- Añade `.env` y cualquier backup como `.env.bak` a tu `.gitignore` para evitar filtraciones.
+- El script intenta evitar imprimir tokens o contraseñas; aun así, revisa logs antes de compartirlos.
+
+Sugerencia práctica (añadir a `.gitignore`):
+
+```
+.env
+.env.bak
+dumps/
+```
+
+---
+
+## Personalización
+
+- `COURSE_ALIASES` en `main.py`: mapea `courseid` → nombre de carpeta deseado.
+- `DUMP_ALL` y `FULL_SANITIZER` en `main.py` controlan nivel de detalle y formato de nombres.
+
+---
+
+## Troubleshooting
+
+- `login failed` → Revisa usuario/contraseña y `MOODLE_SITE`.
+- `Cannot connect` → Verifica URL y conectividad.
+- `No courses found` → Comprueba que tu usuario está matriculado en cursos.
+- `Archivos no se descargan` → Revisa permisos en Moodle (algunos recursos pueden requerir roles/fuentes específicas).
+
+Si necesitas más detalle, ejecuta con `--verbose` y comparte el log (recortando cualquier credencial).
+
+---
+
+## Contribuciones
+
+PRs bienvenidas: arreglos de bugs, mejoras en la UI/UX, y tests. Por favor, evita añadir credenciales reales.
+
+---
+
+©️ 2026 — MooviDump Enhanced
