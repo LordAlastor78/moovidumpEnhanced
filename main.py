@@ -4,7 +4,11 @@ from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 import re
 import json
+import logging
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import getpass
 
 token = None
 private_token = None
@@ -15,17 +19,80 @@ HEADERS = {"Content-Type": "application/x-www-form-urlencoded", "X-Requested-Wit
 # ========== CONFIG ==========
 from dotenv import load_dotenv  # noqa: E402
 
-load_dotenv()
+
+# Network / runtime defaults
+TIMEOUT = 30
+RETRIES = 3
+DOWNLOAD_TIMEOUT = 60
+
+# Logging
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+
+# Setup requests session with retries
+session = requests.Session()
+retries = Retry(total=RETRIES, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["HEAD", "GET", "OPTIONS", "POST"])  # type: ignore
+adapter = HTTPAdapter(max_retries=retries)
+session.mount("https://", adapter)
+session.mount("http://", adapter)
+session.headers.update(HEADERS)
+
+
+def prompt_for_credentials():
+    site = input("MOODLE site URL (e.g. https://moovi.uvigo.gal): ").strip()
+    username = input("MOODLE username: ").strip()
+    password = getpass.getpass("MOODLE password: ")
+    if site:
+        os.environ["MOODLE_SITE"] = site
+    if username:
+        os.environ["MOODLE_USERNAME"] = username
+    if password:
+        os.environ["MOODLE_PASSWORD"] = password
+
+
+def choose_config():
+    ex = Path("example.env")
+    # If all required env vars already provided and there is no example.env, use them (non-interactive/CI)
+    if os.getenv("MOODLE_SITE") and os.getenv("MOODLE_USERNAME") and os.getenv("MOODLE_PASSWORD") and not ex.exists():
+        return
+    if ex.exists():
+        print("Se ha detectado `example.env`. Elige una opción:")
+        print("  1) Usar example.env (valores de ejemplo).")
+        print("  2) Introducir credenciales para acceso temporal (no se guardan).")
+        choice = input("Opción [1/2]: ").strip() or "1"
+        if choice == "1":
+            load_dotenv(dotenv_path=ex)
+            # If example.env contains placeholders, force prompt for credentials
+            env_site = os.getenv("MOODLE_SITE", "")
+            env_user = os.getenv("MOODLE_USERNAME", "")
+            env_pass = os.getenv("MOODLE_PASSWORD", "")
+            placeholders = ("PLACEHOLDER", "username", "password", "YOUR_")
+            if (not env_site) or (not env_user) or (not env_pass) or any(p in env_user.upper() for p in [ph.upper() for ph in placeholders]) or any(p in env_pass.upper() for p in [ph.upper() for ph in placeholders]):
+                print("El example.env contiene valores de ejemplo o vacíos. Introduce credenciales reales:")
+                prompt_for_credentials()
+            else:
+                print("Cargado example.env.")
+        else:
+            prompt_for_credentials()
+    else:
+        print("No se encontró example.env. Introduce credenciales para acceso temporal.")
+        prompt_for_credentials()
+
+
+choose_config()
 
 SITE = os.getenv("MOODLE_SITE")
+if not SITE:
+    print("Missing MOODLE_SITE in environment.")
+    sys.exit(1)
+
+# Normalize SITE to avoid double slashes when building URLs
+SITE = SITE.rstrip("/")
+
 WEBSERVICE_URL = f"{SITE}/webservice/rest/server.php"
 USERNAME = os.getenv("MOODLE_USERNAME")
 PASSWORD = os.getenv("MOODLE_PASSWORD")
-
-# Basic env validation
-if not SITE:
-    print("Missing MOODLE_SITE in environment (.env).")
-    sys.exit(1)
 
 DUMP_ALL = False
 FULL_SANITIZER = False
@@ -35,6 +102,13 @@ COURSE_ALIASES = {
     1679: "AM",
     1680: "PROI",
     1681: "SD",
+    1682: "TCL",
+    1683: "AL",
+    1684: "AEDI I",
+    1685: "ACI I",
+    1686: "PROII",
+    #TODO add all the courses you want to dump here, using their course ID as key and the desired folder name as value. If a course is not listed here, it will use its full name (sanitized) as folder name.
+    
     # ...
 }
 # ========== CONFIG ==========
@@ -65,15 +139,18 @@ def login(username, password):
 
     print(f"Attempting login to {SITE}...")
     try:
-        response = requests.post(
+        response = session.post(
             f"{SITE}/login/token.php?lang=en",
-            headers=HEADERS,
             data={"username": username, "password": password, "service": "moodle_mobile_app"},
-            timeout=30,
+            timeout=TIMEOUT,
         )
 
         if response.status_code == 200:
-            data = response.json()
+            try:
+                data = response.json()
+            except json.JSONDecodeError:
+                logger.error("Login: invalid JSON response")
+                return False
             
             # Check for Moodle error responses
             if "error" in data:
@@ -117,16 +194,19 @@ def post_webservice(function, arguments=None):
         params.update(arguments)
 
     try:
-        response = requests.post(
+        response = session.post(
             WEBSERVICE_URL,
             params=params,
-            headers=HEADERS,
             data={"moodlewssettingfilter": "true", "moodlewssettingfileurl": "true", "moodlewssettinglang": "en"},
-            timeout=30,
+            timeout=TIMEOUT,
         )
 
         if response.status_code == 200:
-            data = response.json()
+            try:
+                data = response.json()
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON from webservice %s", function)
+                return None
             
             # Check for Moodle error in response
             if isinstance(data, dict) and "exception" in data:
@@ -169,8 +249,12 @@ def call_moodle_mobile_functions(requests_list):
         data[f"requests[{i}][settingfilter]"] = str(req.get("settingfilter", 1))
         data[f"requests[{i}][settingfileurl]"] = str(req.get("settingfileurl", 1))
 
-    response = requests.post(WEBSERVICE_URL, headers=HEADERS, data=data)
-    return response.json()
+    response = session.post(WEBSERVICE_URL, data=data, timeout=TIMEOUT)
+    try:
+        return response.json()
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON from tool_mobile_call_external_functions")
+        return None
 
 
 if __name__ == "__main__":
@@ -216,6 +300,42 @@ if __name__ == "__main__":
         sys.exit(1)
     
     print(f"✓ Found {len(courses)} course(s)\n")
+
+    # Present courses and ask whether to download all or select specific ones
+    visible_courses = [c for c in courses if not c.get("hidden")]
+    print("Cursos disponibles:")
+    for i, c in enumerate(visible_courses, start=1):
+        full_name = c.get("fullname", "") or ""
+        display = (full_name.split(":", 1)[1].strip() if ":" in full_name else full_name.strip()) or f"course_{c.get('id')}"
+        print(f"  {i}) [{c.get('id')}] {display}")
+
+    choice = input("\nDescargar todos los cursos? [y/N]: ").strip().lower() or "n"
+    if choice == "y":
+        selected_ids = [c.get("id") for c in visible_courses]
+    else:
+        sel = input("Introduce números (1,2,3) o IDs separados por comas (vacío para cancelar): ").strip()
+        if not sel:
+            print("Operación cancelada.")
+            sys.exit(0)
+        parts = [p.strip() for p in sel.split(",") if p.strip()]
+        selected_ids = set()
+        for p in parts:
+            if p.isdigit():
+                # could be index or id; prefer index if within range
+                idx = int(p)
+                if 1 <= idx <= len(visible_courses):
+                    selected_ids.add(visible_courses[idx - 1].get("id"))
+                else:
+                    selected_ids.add(int(p))
+            else:
+                try:
+                    selected_ids.add(int(p))
+                except ValueError:
+                    pass
+        selected_ids = list(selected_ids)
+
+    # Filter courses to only selected ones
+    courses = [c for c in courses if c.get("id") in (selected_ids or [])]
 
     dumps_dir = Path("dumps")
     dumps_dir.mkdir(parents=True, exist_ok=True)
@@ -296,7 +416,7 @@ if __name__ == "__main__":
 
                     print(f"    ↓ {file_name}")
                     try:
-                        response = requests.get(download_url, headers=HEADERS, timeout=60)
+                        response = session.get(download_url, timeout=DOWNLOAD_TIMEOUT)
 
                         if response.status_code == 200:
                             with open(target_path, "wb") as f:
