@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import getpass
 import logging
+# Module-level logger so helper functions can log before `main()` runs
+logger = logging.getLogger("run")
 def prompt_credentials(default_site="https://moovi.uvigo.gal"):
     """Prompt user for site, username and password. Returns tuple (site, username, password)."""
     site_input = input(f"   MOODLE_SITE [{default_site}]: ").strip()
