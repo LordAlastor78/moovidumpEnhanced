@@ -1,5 +1,6 @@
 dumps
 pcapdumps
+.env.bak
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
