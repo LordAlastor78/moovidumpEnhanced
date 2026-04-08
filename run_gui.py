@@ -20,6 +20,7 @@ from tkinter import messagebox, ttk
 
 APP_TITLE = "MooviDump Enhanced"
 DEFAULT_SITE = "https://moovi.uvigo.gal"
+APP_SUBTITLE = "Interfaz limpia para lanzar descargas sin terminal"
 
 
 class MooviDumpApp:
@@ -48,6 +49,7 @@ class MooviDumpApp:
         self.install_deps_var = tk.BooleanVar(value=not getattr(sys, "frozen", False))
         self.course_mode_var = tk.StringVar(value="all")
         self.course_ids_var = tk.StringVar(value="")
+        self.status_var = tk.StringVar(value="Preparado")
 
         self._build_styles()
         self._build_ui()
@@ -61,107 +63,161 @@ class MooviDumpApp:
         except tk.TclError:
             pass
 
-        bg = "#f4f7fb"
-        card = "#ffffff"
-        accent = "#005a9e"
-        text_main = "#1c2530"
+        bg = "#eef3f8"
+        surface = "#ffffff"
+        surface_soft = "#f8fbfe"
+        accent = "#0b5cab"
+        accent_dark = "#083c73"
+        accent_soft = "#dfeefd"
+        text_main = "#14202d"
+        text_muted = "#617084"
 
         self.root.configure(bg=bg)
 
         style.configure("Root.TFrame", background=bg)
-        style.configure("Card.TFrame", background=card)
-        style.configure("Title.TLabel", background=bg, foreground=text_main, font=("Segoe UI", 20, "bold"))
-        style.configure("Subtitle.TLabel", background=bg, foreground="#4b5b70", font=("Segoe UI", 10))
-        style.configure("CardTitle.TLabel", background=card, foreground=text_main, font=("Segoe UI", 11, "bold"))
-        style.configure("CardText.TLabel", background=card, foreground=text_main, font=("Segoe UI", 10))
-        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=8)
-        style.map("Primary.TButton", background=[("!disabled", accent)])
+        style.configure("Shell.TFrame", background=bg)
+        style.configure("Hero.TFrame", background=accent_dark)
+        style.configure("HeroInner.TFrame", background=accent_dark)
+        style.configure("Card.TFrame", background=surface)
+        style.configure("SoftCard.TFrame", background=surface_soft)
+        style.configure("Title.TLabel", background=accent_dark, foreground="white", font=("Segoe UI", 22, "bold"))
+        style.configure("Subtitle.TLabel", background=accent_dark, foreground="#d5e5f7", font=("Segoe UI", 10))
+        style.configure("HeroPill.TLabel", background=accent_soft, foreground=accent_dark, font=("Segoe UI", 9, "bold"), padding=(10, 4))
+        style.configure("SectionTitle.TLabel", background=surface, foreground=text_main, font=("Segoe UI", 12, "bold"))
+        style.configure("SectionText.TLabel", background=surface, foreground=text_muted, font=("Segoe UI", 10))
+        style.configure("CardTitle.TLabel", background=surface, foreground=text_main, font=("Segoe UI", 11, "bold"))
+        style.configure("CardText.TLabel", background=surface, foreground=text_main, font=("Segoe UI", 10))
+        style.configure("Status.TLabel", background=bg, foreground=text_muted, font=("Segoe UI", 9))
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(16, 9))
+        style.configure("Secondary.TButton", font=("Segoe UI", 10), padding=(14, 9))
+        style.configure("TCheckbutton", background=surface, foreground=text_main, font=("Segoe UI", 10))
+        style.configure("TRadiobutton", background=surface, foreground=text_main, font=("Segoe UI", 10))
+        style.configure(
+            "TEntry",
+            fieldbackground="white",
+            foreground=text_main,
+            insertcolor=text_main,
+            padding=8,
+        )
+
+        style.map("Primary.TButton", background=[("active", accent), ("!disabled", accent)], foreground=[("!disabled", "white")])
+        style.map("Secondary.TButton", background=[("active", surface_soft), ("!disabled", surface_soft)])
 
     def _build_ui(self) -> None:
-        root_frame = ttk.Frame(self.root, style="Root.TFrame", padding=16)
+        root_frame = ttk.Frame(self.root, style="Root.TFrame", padding=18)
         root_frame.pack(fill="both", expand=True)
 
-        title = ttk.Label(root_frame, text=APP_TITLE, style="Title.TLabel")
-        title.pack(anchor="w")
+        hero = tk.Frame(root_frame, bg="#083c73", height=112, highlightthickness=0)
+        hero.pack(fill="x")
+        hero.pack_propagate(False)
 
-        subtitle = ttk.Label(
-            root_frame,
-            text="Descarga tus cursos con una interfaz visual: credenciales, opciones y logs en tiempo real.",
-            style="Subtitle.TLabel",
+        hero_inner = ttk.Frame(hero, style="HeroInner.TFrame", padding=(18, 18))
+        hero_inner.pack(fill="both", expand=True)
+
+        header_row = ttk.Frame(hero_inner, style="HeroInner.TFrame")
+        header_row.pack(fill="x")
+
+        left_header = ttk.Frame(header_row, style="HeroInner.TFrame")
+        left_header.pack(side="left", fill="x", expand=True)
+
+        ttk.Label(left_header, text=APP_TITLE, style="Title.TLabel").pack(anchor="w")
+        ttk.Label(left_header, text=APP_SUBTITLE, style="Subtitle.TLabel").pack(anchor="w", pady=(4, 0))
+
+        ttk.Label(header_row, text="Windows launcher", style="HeroPill.TLabel").pack(side="right", anchor="n", padx=(12, 0), pady=(4, 0))
+
+        content = ttk.Frame(root_frame, style="Shell.TFrame")
+        content.pack(fill="both", expand=True, pady=(16, 0))
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+
+        credentials_card = ttk.Frame(content, style="Card.TFrame", padding=18)
+        credentials_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 10))
+
+        ttk.Label(credentials_card, text="Credenciales", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(credentials_card, text="Introduce tus datos para cargar la sesión.", style="SectionText.TLabel").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(4, 14)
         )
-        subtitle.pack(anchor="w", pady=(2, 14))
 
-        card = ttk.Frame(root_frame, style="Card.TFrame", padding=16)
-        card.pack(fill="x")
+        ttk.Label(credentials_card, text="Moodle site", style="CardText.TLabel").grid(row=2, column=0, sticky="w", pady=(0, 5))
+        self.site_entry = ttk.Entry(credentials_card, textvariable=self.site_var)
+        self.site_entry.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12))
 
-        ttk.Label(card, text="Credenciales", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(credentials_card, text="Usuario", style="CardText.TLabel").grid(row=4, column=0, sticky="w", pady=(0, 5))
+        self.user_entry = ttk.Entry(credentials_card, textvariable=self.user_var)
+        self.user_entry.grid(row=5, column=0, sticky="ew", padx=(0, 8), pady=(0, 12))
 
-        ttk.Label(card, text="Moodle site", style="CardText.TLabel").grid(row=1, column=0, sticky="w", pady=(12, 4))
-        self.site_entry = ttk.Entry(card, textvariable=self.site_var)
-        self.site_entry.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ttk.Label(credentials_card, text="Contraseña", style="CardText.TLabel").grid(row=4, column=1, sticky="w", pady=(0, 5))
+        self.pass_entry = ttk.Entry(credentials_card, textvariable=self.pass_var, show="*")
+        self.pass_entry.grid(row=5, column=1, sticky="ew", pady=(0, 12))
 
-        ttk.Label(card, text="Usuario", style="CardText.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 4))
-        self.user_entry = ttk.Entry(card, textvariable=self.user_var)
-        self.user_entry.grid(row=4, column=0, sticky="ew", padx=(0, 8))
+        options_box = ttk.Frame(credentials_card, style="SoftCard.TFrame", padding=12)
+        options_box.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(2, 14))
 
-        ttk.Label(card, text="Contraseña", style="CardText.TLabel").grid(row=3, column=1, sticky="w", pady=(6, 4))
-        self.pass_entry = ttk.Entry(card, textvariable=self.pass_var, show="*")
-        self.pass_entry.grid(row=4, column=1, sticky="ew")
-
-        opts_frame = ttk.Frame(card, style="Card.TFrame")
-        opts_frame.grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 4))
-
-        ttk.Checkbutton(opts_frame, text="Guardar contraseña en .env", variable=self.save_password_var).pack(anchor="w")
-        ttk.Checkbutton(opts_frame, text="Forzar redescarga (--force)", variable=self.force_var).pack(anchor="w")
-        deps_check = ttk.Checkbutton(opts_frame, text="Instalar dependencias antes de ejecutar", variable=self.install_deps_var)
-        deps_check.pack(anchor="w")
+        ttk.Label(options_box, text="Opciones", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 6))
+        ttk.Checkbutton(options_box, text="Guardar contraseña en .env", variable=self.save_password_var).pack(anchor="w")
+        ttk.Checkbutton(options_box, text="Forzar redescarga (--force)", variable=self.force_var).pack(anchor="w", pady=(2, 0))
+        deps_check = ttk.Checkbutton(options_box, text="Instalar dependencias antes de ejecutar", variable=self.install_deps_var)
+        deps_check.pack(anchor="w", pady=(2, 0))
         if getattr(sys, "frozen", False):
             deps_check.configure(state="disabled")
 
-        course_frame = ttk.Frame(card, style="Card.TFrame")
-        course_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 2))
-
-        ttk.Label(course_frame, text="Selección de cursos", style="CardText.TLabel").pack(anchor="w")
-        ttk.Radiobutton(
-            course_frame,
-            text="Descargar todos los cursos visibles",
-            value="all",
-            variable=self.course_mode_var,
-            command=self._toggle_course_ids,
-        ).pack(anchor="w", pady=(4, 0))
-        ttk.Radiobutton(
-            course_frame,
-            text="Descargar solo IDs concretos",
-            value="ids",
-            variable=self.course_mode_var,
-            command=self._toggle_course_ids,
-        ).pack(anchor="w")
-
-        self.course_ids_entry = ttk.Entry(course_frame, textvariable=self.course_ids_var)
-        self.course_ids_entry.pack(fill="x", pady=(6, 0))
-        self.course_hint = ttk.Label(course_frame, text="Ejemplo: 1684,1685,1702", style="CardText.TLabel")
-        self.course_hint.pack(anchor="w")
-        self._toggle_course_ids()
-
-        card.columnconfigure(0, weight=1)
-        card.columnconfigure(1, weight=1)
-
-        actions = ttk.Frame(root_frame, style="Root.TFrame")
-        actions.pack(fill="x", pady=(12, 8))
+        actions = ttk.Frame(credentials_card, style="Card.TFrame")
+        actions.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
         self.run_button = ttk.Button(actions, text="Ejecutar descarga", style="Primary.TButton", command=self._start_run)
         self.run_button.pack(side="left")
 
-        self.stop_button = ttk.Button(actions, text="Detener", command=self._stop_run, state="disabled")
-        self.stop_button.pack(side="left", padx=(8, 0))
+        self.stop_button = ttk.Button(actions, text="Detener", style="Secondary.TButton", command=self._stop_run, state="disabled")
+        self.stop_button.pack(side="left", padx=(10, 0))
 
-        self.clear_button = ttk.Button(actions, text="Limpiar log", command=self._clear_log)
-        self.clear_button.pack(side="left", padx=(8, 0))
+        self.clear_button = ttk.Button(actions, text="Limpiar log", style="Secondary.TButton", command=self._clear_log)
+        self.clear_button.pack(side="left", padx=(10, 0))
 
-        log_card = ttk.Frame(root_frame, style="Card.TFrame", padding=12)
-        log_card.pack(fill="both", expand=True)
+        credentials_card.columnconfigure(0, weight=1)
+        credentials_card.columnconfigure(1, weight=1)
 
-        ttk.Label(log_card, text="Log de ejecución", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        course_card = ttk.Frame(content, style="Card.TFrame", padding=18)
+        course_card.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 10))
+
+        ttk.Label(course_card, text="Selección de cursos", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(course_card, text="Elige si quieres descargar todo o un subconjunto concreto.", style="SectionText.TLabel").pack(anchor="w", pady=(4, 14))
+
+        selector_box = ttk.Frame(course_card, style="SoftCard.TFrame", padding=12)
+        selector_box.pack(fill="x")
+
+        ttk.Radiobutton(
+            selector_box,
+            text="Descargar todos los cursos visibles",
+            value="all",
+            variable=self.course_mode_var,
+            command=self._toggle_course_ids,
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            selector_box,
+            text="Descargar solo IDs concretos",
+            value="ids",
+            variable=self.course_mode_var,
+            command=self._toggle_course_ids,
+        ).pack(anchor="w", pady=(4, 0))
+
+        self.course_ids_entry = ttk.Entry(selector_box, textvariable=self.course_ids_var)
+        self.course_ids_entry.pack(fill="x", pady=(10, 6))
+        self.course_hint = ttk.Label(selector_box, text="Ejemplo: 1684,1685,1702", style="SectionText.TLabel")
+        self.course_hint.pack(anchor="w")
+        self._toggle_course_ids()
+
+        status_box = ttk.Frame(course_card, style="SoftCard.TFrame", padding=12)
+        status_box.pack(fill="x", pady=(14, 0))
+        ttk.Label(status_box, text="Estado", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(status_box, textvariable=self.status_var, style="Status.TLabel").pack(anchor="w", pady=(4, 0))
+
+        log_card = ttk.Frame(root_frame, style="Card.TFrame", padding=14)
+        log_card.pack(fill="both", expand=True, pady=(0, 0))
+
+        log_header = ttk.Frame(log_card, style="Card.TFrame")
+        log_header.pack(fill="x", pady=(0, 10))
+        ttk.Label(log_header, text="Log de ejecución", style="CardTitle.TLabel").pack(side="left")
+        ttk.Label(log_header, text="La actividad aparece aquí en tiempo real.", style="SectionText.TLabel").pack(side="right")
 
         self.log_text = tk.Text(
             log_card,
@@ -218,6 +274,9 @@ class MooviDumpApp:
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    def _set_status(self, text: str) -> None:
+        self.status_var.set(text)
+
     def _clear_log(self) -> None:
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", "end")
@@ -256,6 +315,7 @@ class MooviDumpApp:
 
         self.run_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
+        self._set_status("Preparando ejecución...")
         self._append_log("\n=== Nueva ejecución ===\n")
         self._append_log(f"Site: {site}\n")
 
@@ -267,6 +327,7 @@ class MooviDumpApp:
             os.chdir(self.app_dir)
 
             if self.install_deps_var.get():
+                self._set_status("Instalando dependencias...")
                 self._run_command([
                     sys.executable,
                     "-m",
@@ -298,6 +359,7 @@ class MooviDumpApp:
             if self.force_var.get():
                 cmd.append("--force")
 
+            self._set_status("Ejecutando descarga...")
             exit_code = self._run_command(cmd, "Ejecutando main.py...", env=env)
             self.output_queue.put(f"\nProceso finalizado con código {exit_code}.\n")
         except Exception as exc:
@@ -349,6 +411,7 @@ class MooviDumpApp:
             if line == "__PROCESS_FINISHED__":
                 self.run_button.configure(state="normal")
                 self.stop_button.configure(state="disabled")
+                self._set_status("Listo")
                 continue
 
             self._append_log(line)
