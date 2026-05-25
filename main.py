@@ -17,6 +17,8 @@ import re
 import json
 import logging
 import argparse
+import shutil
+import time
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -38,6 +40,10 @@ from dotenv import load_dotenv  # noqa: E402
 TIMEOUT = 30
 RETRIES = 3
 DOWNLOAD_TIMEOUT = 60
+DOWNLOAD_CHUNK_SIZE = 64 * 1024
+DOWNLOAD_CONNECT_TIMEOUT = 15
+DOWNLOAD_RETRY_ATTEMPTS = 2
+DOWNLOAD_PROGRESS_EVERY_MB = 5
 
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -237,6 +243,152 @@ def remove_empty_dirs(root_path):
         except Exception as e:
             logger.debug("Could not remove %s: %s", p, e)
     return removed
+
+
+def collapse_single_file_dirs(root_path, min_depth=3):
+    """Aplana carpetas hoja con un unico archivo moviendolo al directorio padre.
+
+    Solo colapsa directorios con profundidad relativa >= ``min_depth`` para
+    evitar mover carpetas de nivel superior (por ejemplo, las de curso).
+
+    Devuelve el numero de carpetas colapsadas.
+    """
+    root = Path(root_path)
+    if not root.exists():
+        return 0
+
+    collapsed = 0
+
+    for dirpath, _, _ in os.walk(root, topdown=False):
+        p = Path(dirpath)
+        if p == root:
+            continue
+
+        rel_depth = len(p.relative_to(root).parts)
+        if rel_depth < min_depth:
+            continue
+
+        try:
+            entries = list(p.iterdir())
+        except Exception as e:
+            logger.debug("Could not inspect %s: %s", p, e)
+            continue
+
+        files = [e for e in entries if e.is_file()]
+        dirs = [e for e in entries if e.is_dir()]
+
+        if len(files) != 1 or dirs:
+            continue
+
+        src = files[0]
+        dst = p.parent / src.name
+
+        if dst.exists():
+            logger.warning("Cannot collapse %s; destination exists: %s", p, dst)
+            continue
+
+        try:
+            shutil.move(str(src), str(dst))
+            p.rmdir()
+            logger.info("Collapsed single-file directory: %s -> %s", p, dst)
+            collapsed += 1
+        except Exception as e:
+            logger.debug("Could not collapse %s: %s", p, e)
+
+    return collapsed
+
+
+def download_to_path(download_url, target_path):
+    """Descarga robusta a disco usando streaming y archivo temporal.
+
+    Devuelve (ok, bytes_written). En caso de fallo limpia el temporal para evitar
+    ficheros corruptos parciales.
+    """
+    temp_path = target_path.with_suffix(f"{target_path.suffix}.part")
+
+    for attempt in range(1, DOWNLOAD_RETRY_ATTEMPTS + 1):
+        try:
+            with session.get(
+                download_url,
+                timeout=(DOWNLOAD_CONNECT_TIMEOUT, DOWNLOAD_TIMEOUT),
+                stream=True,
+            ) as response:
+                if response.status_code != 200:
+                    logger.warning(
+                        "HTTP %s when downloading %s (attempt %d/%d)",
+                        response.status_code,
+                        target_path.name,
+                        attempt,
+                        DOWNLOAD_RETRY_ATTEMPTS,
+                    )
+                    continue
+
+                content_length = response.headers.get("Content-Length", "").strip()
+                expected_size = int(content_length) if content_length.isdigit() else None
+                if expected_size is not None and expected_size > 0:
+                    logger.info(
+                        "Starting %s (%.2f MB)",
+                        target_path.name,
+                        expected_size / (1024 * 1024),
+                    )
+
+                bytes_written = 0
+                last_progress_bytes = 0
+                start_time = time.monotonic()
+
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        bytes_written += len(chunk)
+
+                        if bytes_written - last_progress_bytes >= DOWNLOAD_PROGRESS_EVERY_MB * 1024 * 1024:
+                            elapsed = max(time.monotonic() - start_time, 0.001)
+                            speed_mb_s = (bytes_written / (1024 * 1024)) / elapsed
+                            logger.info(
+                                "Downloading %s: %.2f MB written (%.2f MB/s)",
+                                target_path.name,
+                                bytes_written / (1024 * 1024),
+                                speed_mb_s,
+                            )
+                            last_progress_bytes = bytes_written
+
+                if expected_size is not None and bytes_written != expected_size:
+                    logger.warning(
+                        "Size mismatch for %s (expected %s bytes, got %s bytes) (attempt %d/%d)",
+                        target_path.name,
+                        expected_size,
+                        bytes_written,
+                        attempt,
+                        DOWNLOAD_RETRY_ATTEMPTS,
+                    )
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
+
+                temp_path.replace(target_path)
+                return True, bytes_written
+        except requests.exceptions.Timeout:
+            logger.warning("Timeout downloading %s (attempt %d/%d)", target_path.name, attempt, DOWNLOAD_RETRY_ATTEMPTS)
+        except requests.exceptions.ConnectionError:
+            logger.warning("Connection error downloading %s (attempt %d/%d)", target_path.name, attempt, DOWNLOAD_RETRY_ATTEMPTS)
+        except requests.exceptions.RequestException as e:
+            logger.warning("Request error downloading %s (attempt %d/%d): %s", target_path.name, attempt, DOWNLOAD_RETRY_ATTEMPTS, e)
+        except OSError as e:
+            logger.warning("Filesystem error writing %s: %s", target_path, e)
+            break
+        except Exception as e:
+            logger.exception("Unexpected error downloading %s: %s", target_path.name, e)
+
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return False, 0
 
 
 def login(username, password):
@@ -476,6 +628,10 @@ if __name__ == "__main__":
     dumps_dir = Path("dumps")
     dumps_dir.mkdir(parents=True, exist_ok=True)
 
+    downloaded_count = 0
+    skipped_count = 0
+    failed_count = 0
+
     for course in courses or []:
         if course.get("hidden"):
             continue
@@ -514,9 +670,9 @@ if __name__ == "__main__":
             section_number = section.get("section", 0)
             section_name = section.get("name")
 
-            section_folder_name = sanitize(section_name)
+            section_folder_name = sanitize(section_name or f"section_{section_number}")
             if DUMP_ALL:
-                section_folder_name = f"{int(section_number):02d}_{sanitize(section_name)}"
+                section_folder_name = f"{int(section_number):02d}_{sanitize(section_name or f'section_{section_number}')}"
             section_dir = sections_root / section_folder_name
             section_dir.mkdir(parents=True, exist_ok=True)
 
@@ -526,9 +682,9 @@ if __name__ == "__main__":
 
             for module_index, module in enumerate(section.get("modules", [])):
                 module_name = module.get("name")
-                module_folder_name = sanitize(module_name)
+                module_folder_name = sanitize(module_name or f"module_{module_index}")
                 if DUMP_ALL:
-                    module_folder_name = f"{module_index:03d}_{sanitize(module_name)}"
+                    module_folder_name = f"{module_index:03d}_{sanitize(module_name or f'module_{module_index}')}"
                 module_dir = section_dir / module_folder_name
                 module_dir.mkdir(parents=True, exist_ok=True)
 
@@ -540,37 +696,45 @@ if __name__ == "__main__":
                     if content.get("type") != "file":
                         continue
 
-                    file_name = content.get("filename")
-                    file_name = sanitize(file_name)
+                    file_name = sanitize(content.get("filename") or "file")
                     target_path = module_dir / file_name
 
                     # Skip download if file already exists (same name) unless forcing
                     if target_path.exists() and not FORCE_DOWNLOAD:
                         logger.info("Skipping download; file already exists: %s", target_path)
+                        skipped_count += 1
                         continue
 
-                    file_url = content["fileurl"]
+                    file_url = content.get("fileurl")
                     download_url = pluginfile_to_token_url(file_url, private_access_key)
                     if not download_url:
                         logger.warning("Skipping download: missing access key or URL for %s", file_name)
+                        failed_count += 1
                         continue
 
                     # Use ASCII-only text to avoid encoding issues on legacy Windows consoles.
                     logger.info("Downloading: %s", file_name)
-                    try:
-                        response = session.get(download_url, timeout=DOWNLOAD_TIMEOUT)
+                    ok, bytes_written = download_to_path(download_url, target_path)
+                    if ok:
+                        downloaded_count += 1
+                        size_mb = bytes_written / (1024 * 1024)
+                        logger.info("Downloaded %s (%.2f MB)", file_name, size_mb)
+                    else:
+                        failed_count += 1
 
-                        if response.status_code == 200:
-                            with open(target_path, "wb") as f:
-                                f.write(response.content)
-                            size_mb = len(response.content) / (1024 * 1024)
-                            logger.info("Downloaded %s (%.2f MB)", file_name, size_mb)
-                        else:
-                            logger.warning("HTTP %s when downloading %s", response.status_code, file_name)
-                    except Exception as e:
-                        logger.exception("Error downloading %s: %s", file_name, e)
+    # Aplana carpetas de modulo que solo contienen un archivo descargado.
+    logger.info("Colapsando carpetas de un solo archivo en %s...", dumps_dir)
+    collapsed = collapse_single_file_dirs(dumps_dir, min_depth=3)
+    logger.info("Carpetas colapsadas: %d", collapsed)
 
     # Limpieza de carpetas vacías dentro de `dumps/`
     logger.info("Eliminando carpetas vacías en %s...", dumps_dir)
     removed = remove_empty_dirs(dumps_dir)
     logger.info("Carpetas eliminadas: %d", removed)
+
+    logger.info(
+        "Resumen descarga -> descargados: %d, omitidos: %d, fallidos: %d",
+        downloaded_count,
+        skipped_count,
+        failed_count,
+    )
